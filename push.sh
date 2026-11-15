@@ -32,13 +32,13 @@ fi
 git commit -m "$COMMIT_MSG" || echo "Nothing to commit or commit failed."
 
 echo
-echo "Pushing to $REPO_URL ($BRANCH)..."
-if git push -u origin "$BRANCH"; then
+echo "Pushing to $REPO_URL ($BRANCH) - replacing everything in the repo..."
+if git push -u --force origin "$BRANCH"; then
     echo
     echo "Done! Pushed to $REPO_URL"
 else
     echo
-    echo "[ERROR] Push failed. If the remote already has commits, run: git pull origin $BRANCH --rebase"
+    echo "[ERROR] Push failed. Check your GitHub sign-in and that the repo exists."
     read -r -p "Press Enter to close..."
     exit 1
 fi

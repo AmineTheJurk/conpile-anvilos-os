@@ -1,0 +1,6 @@
+{
+  "name": "NyxOS",
+  "description": "Unix-like 32-bit x86 operating system written in C and NASM assembly with NyxFS filesystem, hardware drivers, framebuffer desktop GUI, custom NXE executable format, Windows-compatible NyxC compiler, GitHub Actions CI, and ImageUSB-ready bootable USB image.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

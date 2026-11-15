@@ -1,0 +1,66 @@
+name: Build AnvilOS & Windows Compiler
+
+on:
+  push:
+    branches: [ "**" ]
+  pull_request:
+    branches: [ "**" ]
+  workflow_dispatch:
+
+jobs:
+  build-anvilos:
+    name: Compile AnvilOS Kernel, 91 OpenBSD .mod Drivers, USB Image & Windows Tools
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install x86 OS & MinGW-w64 cross-compile toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc gcc-multilib nasm binutils make zip gcc-mingw-w64-x86-64 qemu-system-x86
+
+      - name: Static check C sources
+        run: make check
+
+      - name: Build AnvilOS USB image, 91 .mod drivers, Linux & Windows tools, and .anv binaries
+        run: make -j$(nproc) all zip
+
+      - name: Inspect compiled .anv executable header
+        run: ./build/agcc --inspect build/hello.anv
+
+      - name: Boot-test AnvilOS Wi-Fi & selective OpenBSD module loading in QEMU
+        run: |
+          (sleep 2; printf "uname\nlsmod\ndate\nwifi scan\nwifi connect AnvilNet-5G pass123\nwifi\n/bin/hello.anv\n"; sleep 2) | \
+            timeout 12 qemu-system-i386 -drive file=build/anvilos_usb.bin,format=raw,index=0,media=disk -m 64M -nographic -serial mon:stdio | tee qemu_boot.log || true
+          grep -q "AnvilOS Kernel v1.0 Booting" qemu_boot.log
+          grep -q "Loaded OpenBSD Modules" qemu_boot.log
+          grep -q "Connected to Wi-Fi 'AnvilNet-5G'" qemu_boot.log
+          grep -q "Hello from a REAL compiled .anv executable!" qemu_boot.log
+
+      - name: Test incompatible hardware Continue & Shut Down prompt in QEMU
+        run: |
+          (sleep 2; printf "\r"; sleep 1; printf "uname\n"; sleep 1) | \
+            timeout 10 qemu-system-i386 -drive file=build/anvilos_usb.bin,format=raw,index=0,media=disk -device es1370 -m 64M -nographic -serial mon:stdio | tee qemu_nomod.log || true
+          grep -q "No Compatible Devices On Your Computer! :" qemu_nomod.log
+          grep -q "1274:5000" qemu_nomod.log
+          grep -q "User selected Continue" qemu_nomod.log
+
+      - name: Upload AnvilOS USB Image, Windows Compiler & Source Zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: anvilos-release-bundle
+          path: |
+            anvilos-complete.zip
+            build/anvilos_usb.bin
+            build/anvilos_usb.img
+            build/agcc.exe
+            build/mkanvilfs.exe
+            build/mkmod.exe
+            build/modules/
+            build/hello.anv
+            build/sysinfo.anv
+            build/calc.anv
+            qemu_boot.log
+            qemu_nomod.log

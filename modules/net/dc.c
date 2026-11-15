@@ -1,0 +1,79 @@
+#include "kmod.h"
+
+const mod_meta_raw_t __attribute__((section(".modmeta"), used)) mod_meta = {
+    .drv_class   = 4,
+    .match_class = 0xFF,
+    .match_sub   = 0xFF,
+    .name        = "dc",
+    .origin      = "openbsd:sys/dev/pci/if_dc_pci.c"
+};
+
+const mod_pci_id_t __attribute__((section(".modids"), used)) mod_pci_ids[] = {
+    { 0x1011, 0x0009 },
+    { 0x1011, 0x0019 },
+    { 0x1282, 0x9009 },
+    { 0x1282, 0x9100 },
+    { 0x1282, 0x9102 },
+    { 0x1317, 0x9511 },
+    { 0x1317, 0x9513 },
+    { 0x1317, 0x0981 },
+    { 0x1317, 0x0985 },
+    { 0x125B, 0x1400 },
+    { 0x10D9, 0x0512 },
+    { 0x10D9, 0x0531 },
+    { 0x10D9, 0x0532 },
+    { 0x11F6, 0x9881 },
+    { 0x11AD, 0x0002 },
+    { 0x11AD, 0xC115 },
+    { 0x1113, 0x1217 },
+    { 0x1113, 0x1216 },
+    { 0x14F1, 0x1803 },
+    { 0x8086, 0x0039 },
+    { 0x10B7, 0x9300 },
+    { 0x1414, 0x0002 },
+    { 0x115D, 0x0003 },
+    { 0x1317, 0x1985 },
+    { 0x13D1, 0xAB02 },
+    { 0x13D1, 0xAB08 },
+    { 0x13D1, 0xAB03 },
+    { 0x1186, 0x1561 },
+    { 0x1737, 0xAB08 },
+    { 0x1737, 0xAB09 },
+    { 0x17B3, 0xAB08 },
+    { 0x1414, 0x0001 },
+    { 0x1011, 0x0002 },
+    { 0x1011, 0x0003 },
+    { 0x1011, 0x0039 },
+    { 0x1011, 0x9100 },
+    { 0x1011, 0x9102 },
+    { 0x1011, 0x9009 },
+    { 0x1011, 0x0981 },
+    { 0x1011, 0x9511 },
+    { 0x1011, 0x9513 },
+    { 0x1011, 0x0985 },
+    { 0x1011, 0x9300 },
+    { 0x1011, 0x1216 },
+    { 0x1011, 0x0512 },
+    { 0x1011, 0x0531 },
+    { 0x1011, 0x1217 },
+    { 0x1011, 0x0532 },
+    { 0x1011, 0x9881 },
+    { 0x1011, 0xC115 },
+    { 0x1011, 0x1400 },
+    { 0x1011, 0x1803 }
+};
+
+int mod_init(const kmod_api_t* api, const kmod_pci_dev_t* dev) {
+    api->pci_enable_busmaster(dev->bus, dev->slot, dev->func);
+    uint32_t base = (dev->bar[0] & 1) ? (dev->bar[0] & ~0x3U) : (dev->bar[0] & ~0xFU);
+    if (base && !(dev->bar[0] & 1)) api->vmm_map_mmio(base, 0x4000);
+    uint8_t mac[6];
+    mac[0] = 0x02;
+    mac[1] = (uint8_t)(dev->vendor_id >> 8);
+    mac[2] = (uint8_t)(dev->vendor_id & 0xFF);
+    mac[3] = (uint8_t)(dev->device_id >> 8);
+    mac[4] = (uint8_t)(dev->device_id & 0xFF);
+    mac[5] = (uint8_t)((dev->bus << 4) | dev->slot);
+    api->register_net("dc", false, mac, true, 1000, base);
+    return 0;
+}

@@ -399,11 +399,9 @@ static void render_incompatible_screen(int selected_btn, int32_t mx, int32_t my,
 
     /* Alert title bar */
     fb_fill_rect(bx, by, box_w, 42, RGB(135, 35, 45));
-    fb_draw_string(bx + 20, by + 16, "No Compatible Devices On Your Computer! :", RGB(255, 245, 245), 0, true);
-
-    fb_draw_string(bx + 20, by + 56,
-                   "AnvilOS could not find compatible OpenBSD driver modules (.mod) for:",
-                   RGB(220, 225, 240), 0, true);
+    fb_draw_string(bx + 20, by + 16,
+                   "Compatible Drivers Were Not Found For The Devices Listed Below :",
+                   RGB(255, 245, 245), 0, true);
 
     /* Device list box */
     int32_t lx = bx + 20;
@@ -418,10 +416,8 @@ static void render_incompatible_screen(int selected_btn, int32_t mx, int32_t my,
     for (int i = 0; i < unmatched_cnt && cy + 20 < ly + lh; i++) {
         const unmatched_dev_info_t* u = &unmatched_devs[i];
         fb_fill_rect(lx + 8, cy - 2, lw - 16, 22, (i % 2 == 0) ? RGB(20, 25, 36) : RGB(16, 20, 30));
-        snprintf(row, sizeof(row), "%02x:%02x.%x [%04x:%04x] %s",
-                 u->bus, u->slot, u->func, u->vendor_id, u->device_id, u->desc);
+        snprintf(row, sizeof(row), "%s", u->desc);
         fb_draw_string(lx + 14, cy + 4, row, RGB(255, 195, 130), 0, true);
-        fb_draw_string(lx + lw - 256, cy + 4, u->reason, RGB(235, 115, 120), 0, true);
         cy += 26;
     }
 
@@ -461,12 +457,11 @@ static void render_incompatible_screen(int selected_btn, int32_t mx, int32_t my,
 
 static void print_serial_prompt(int sel) {
     serial_puts("\n====================================================================\n");
-    serial_puts("  No Compatible Devices On Your Computer! :\n");
+    serial_puts("  Compatible Drivers Were Not Found For The Devices Listed Below :\n");
     serial_puts("====================================================================\n");
     for (int i = 0; i < unmatched_cnt; i++) {
         const unmatched_dev_info_t* u = &unmatched_devs[i];
-        serial_printf("  * %02x:%02x.%x [%04x:%04x] %s (%s)\n",
-                      u->bus, u->slot, u->func, u->vendor_id, u->device_id, u->desc, u->reason);
+        serial_printf("  * %s\n", u->desc);
     }
     serial_puts("--------------------------------------------------------------------\n");
     serial_printf("  Arrow Keys + Enter:   %s[ Continue ]%s     %s[ Shut Down ]%s\n",

@@ -3,7 +3,8 @@
 
 #include "types.h"
 
-#define MAX_PCI_DEVICES 48
+/* Keep enough entries for systems with multiple PCI buses and adapters. */
+#define MAX_PCI_DEVICES 256
 
 typedef struct {
     uint8_t  bus;

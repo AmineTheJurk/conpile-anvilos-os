@@ -35,22 +35,23 @@ void pci_enable_busmaster(uint8_t bus, uint8_t slot, uint8_t func) {
 
 void pci_init(void) {
     pci_count = 0;
-    for (uint8_t bus = 0; bus < 8 && pci_count < MAX_PCI_DEVICES; bus++) {
+    /* Mechanism #1 supports all 256 bus numbers; uint16_t avoids wrap at 255. */
+    for (uint16_t bus = 0; bus < 256 && pci_count < MAX_PCI_DEVICES; bus++) {
         for (uint8_t slot = 0; slot < 32 && pci_count < MAX_PCI_DEVICES; slot++) {
             for (uint8_t func = 0; func < 8 && pci_count < MAX_PCI_DEVICES; func++) {
-                uint32_t id = pci_cfg_read32(bus, slot, func, 0x00);
+                uint32_t id = pci_cfg_read32((uint8_t)bus, slot, func, 0x00);
                 uint16_t vendor = (uint16_t)(id & 0xFFFF);
                 if (vendor == 0xFFFF) {
                     if (func == 0) break;
                     continue;
                 }
                 uint16_t device = (uint16_t)(id >> 16);
-                uint32_t cls_reg = pci_cfg_read32(bus, slot, func, 0x08);
-                uint32_t hdr_reg = pci_cfg_read32(bus, slot, func, 0x0C);
-                uint32_t irq_reg = pci_cfg_read32(bus, slot, func, 0x3C);
+                uint32_t cls_reg = pci_cfg_read32((uint8_t)bus, slot, func, 0x08);
+                uint32_t hdr_reg = pci_cfg_read32((uint8_t)bus, slot, func, 0x0C);
+                uint32_t irq_reg = pci_cfg_read32((uint8_t)bus, slot, func, 0x3C);
 
                 pci_device_t* d = &pci_devs[pci_count++];
-                d->bus        = bus;
+                d->bus        = (uint8_t)bus;
                 d->slot       = slot;
                 d->func       = func;
                 d->vendor_id  = vendor;
@@ -59,7 +60,7 @@ void pci_init(void) {
                 d->subclass   = (uint8_t)((cls_reg >> 16) & 0xFF);
                 d->prog_if    = (uint8_t)((cls_reg >> 8) & 0xFF);
                 for (int b = 0; b < 6; b++) {
-                    d->bar[b] = pci_cfg_read32(bus, slot, func, (uint8_t)(0x10 + b * 4));
+                    d->bar[b] = pci_cfg_read32((uint8_t)bus, slot, func, (uint8_t)(0x10 + b * 4));
                 }
                 d->bar0     = d->bar[0];
                 d->irq_line = (uint8_t)(irq_reg & 0xFF);

@@ -9,8 +9,11 @@
 #define NET_IPV4_HEADER 20
 #define NET_ETHERTYPE_IPV4 0x0800
 #define NET_ETHERTYPE_ARP  0x0806
+#define NET_IPPROTO_ICMP 1
+#define NET_IPPROTO_TCP  6
+#define NET_IPPROTO_UDP  17
 
-/* IPv4 values are stored in network byte order (e.g. 10.0.2.15). */
+/* IPv4 values are kept in network byte order. */
 typedef struct {
     uint32_t ip;
     uint32_t netmask;
@@ -26,7 +29,6 @@ typedef struct {
     bool is_wifi;
 } net_interface_t;
 
-/* A driver supplies transmit and calls netstack_receive() for received frames. */
 typedef bool (*netstack_tx_fn)(int interface_index, const uint8_t* frame, uint32_t length);
 typedef void (*netstack_rx_fn)(int interface_index, uint16_t ethertype,
                                const uint8_t* payload, uint32_t length);

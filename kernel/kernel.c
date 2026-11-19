@@ -16,6 +16,7 @@
 #include "fb.h"
 #include "kmod.h"
 #include "wifi.h"
+#include "netstack.h"
 #include "gui.h"
 #include "io.h"
 #include "string.h"
@@ -37,7 +38,7 @@ void kmain(const boot_info_t* bi) {
 
     pmm_init(bi);
     vmm_init(bi);
-    kheap_init(0x00800000, 6 * 1024 * 1024); /* 6 MiB Kernel Heap at 8MB */
+    kheap_init(0x00800000, 6 * 1024 * 1024);
     serial_printf("[MEM] PMM=%u KB, Paging enabled, Heap=6144 KB\n", pmm_total_kb());
 
     timer_init(100);
@@ -71,12 +72,10 @@ void kmain(const boot_info_t* bi) {
         serial_puts("[VBE] Headless / text mode.\n");
     }
 
-    /* Probe hardware on demand & load ONLY matching OpenBSD .mod drivers from /lib/modules */
     kmod_probe_and_load(bi);
-    if (kmod_unmatched_count() > 0) {
-        kmod_prompt_incompatible(bi);
-    }
+    if (kmod_unmatched_count() > 0) kmod_prompt_incompatible(bi);
 
+    netstack_init();
     wifi_init();
     ash_init();
     serial_puts("[OK] Kernel ready. Entering Desktop / Shell loop.\n");

@@ -13,7 +13,7 @@
 #define NET_IPPROTO_TCP  6
 #define NET_IPPROTO_UDP  17
 
-/* IPv4 values are kept in network byte order. */
+/* IPv4 values are stored in network byte order. */
 typedef struct {
     uint32_t ip;
     uint32_t netmask;
@@ -42,6 +42,9 @@ bool netstack_register_tx(int index, netstack_tx_fn transmit);
 void netstack_set_rx_handler(netstack_rx_fn handler);
 void netstack_receive(int index, const uint8_t* frame, uint32_t length);
 
+/* Ethernet payload is copied into a link-layer frame and submitted to the NIC. */
+bool netstack_send_ethernet(int index, const uint8_t destination[6], uint16_t ethertype,
+                            const uint8_t* payload, uint32_t payload_len);
 bool netstack_send_arp_request(int index, uint32_t target_ip);
 bool netstack_send_ipv4(int index, uint32_t dest_ip, uint8_t protocol,
                         const uint8_t* payload, uint32_t payload_len);

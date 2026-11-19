@@ -15,7 +15,7 @@ BUILD   := build
 
 K_ASM   := kernel/entry.asm
 K_SRCS  := kernel/kernel.c kernel/gdt.c kernel/idt.c kernel/mem.c kernel/string.c \
-           kernel/task.c kernel/anv_loader.c kernel/kmod.c kernel/wifi.c \
+           kernel/task.c kernel/anv_loader.c kernel/kmod.c kernel/wifi.c kernel/netstack.c \
            drivers/serial.c drivers/timer.c drivers/keyboard.c drivers/mouse.c \
            drivers/ata.c drivers/pci.c drivers/fb.c drivers/acpi.c drivers/rtc.c \
            fs/anvilfs.c fs/vfs.c \
@@ -63,22 +63,18 @@ $(BUILD)/agcc.exe: compiler/agcc.c include/anv.h
 	$(WIN_CC) $(HFLAGS) compiler/agcc.c -o $@
 
 $(BUILD)/mkanvilfs: tools/mkanvilfs.c include/anvilfs.h
-	@mkdir -p $(BUILD)
 	$(CC) $(HFLAGS) tools/mkanvilfs.c -o $@
 
 $(BUILD)/mkanvilfs.exe: tools/mkanvilfs.c include/anvilfs.h
-	@mkdir -p $(BUILD)
 	$(WIN_CC) $(HFLAGS) tools/mkanvilfs.c -o $@
 
 $(BUILD)/mkmod: tools/mkmod.c include/kmod.h
-	@mkdir -p $(BUILD)
 	$(CC) $(HFLAGS) tools/mkmod.c -o $@
 
 $(BUILD)/mkmod.exe: tools/mkmod.c include/kmod.h
-	@mkdir -p $(BUILD)
 	$(WIN_CC) $(HFLAGS) tools/mkmod.c -o $@
 
-# Compile every OpenBSD driver source into an independent AKM1 loadable .mod binary
+# Compile each AnvilOS loadable module as an AKM1 binary.
 define MOD_RULE
 $(BUILD)/modules/$(notdir $(1:.c=.mod)): $(1) include/kmod.h modules/common/mod.ld $(BUILD)/mkmod
 	@mkdir -p $(BUILD)/mod_obj $(BUILD)/modules

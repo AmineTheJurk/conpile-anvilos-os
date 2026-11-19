@@ -29,8 +29,9 @@ static void detect_hw(void) {
 static void save_wifi_conf(void) {
     int fd = vfs_open("/etc/wifi.conf", O_CREAT | O_TRUNC | O_WRONLY);
     if (fd < 0) return;
-    char line[96];
+    /* Do not persist passphrases; only record the last successfully associated SSID. */
     if (g_connected && g_conn_ssid[0]) {
+        char line[48];
         snprintf(line, sizeof(line), "ACTIVE=%s\n", g_conn_ssid);
         vfs_write(fd, line, (uint32_t)strlen(line));
     }
@@ -51,10 +52,41 @@ static void load_wifi_conf(void) {
         if (nl) *nl = '\0';
         if (strncmp(line, "ACTIVE=", 7) == 0 && line[7]) {
             strncpy(g_conn_ssid, line + 7, sizeof(g_conn_ssid) - 1);
+            g_conn_ssid[sizeof(g_conn_ssid) - 1] = '\0';
         }
         if (!nl) break;
         line = nl + 1;
     }
+}
+
+static void update_connected_state(void) {
+    for (int i = 0; i < bss_count; i++) {
+        bss_list[i].connected = g_connected && strcmp(g_conn_ssid, bss_list[i].ssid) == 0;
+        if (bss_list[i].connected) g_conn_signal = bss_list[i].signal_pct;
+    }
+}
+
+static void add_scan_result(const kmod_wifi_bss_t* found) {
+    if (!found || !found->ssid[0]) return;
+    /* Merge duplicate SSIDs reported by multiple radios, retaining the strongest. */
+    for (int i = 0; i < bss_count; i++) {
+        if (strcmp(bss_list[i].ssid, found->ssid) == 0) {
+            if (found->signal_pct > bss_list[i].signal_pct) {
+                bss_list[i].signal_pct = found->signal_pct;
+                bss_list[i].channel = found->channel;
+            }
+            bss_list[i].secured = bss_list[i].secured || found->secured;
+            return;
+        }
+    }
+    if (bss_count >= WIFI_MAX_BSS) return;
+    wifi_bss_t* b = &bss_list[bss_count++];
+    memset(b, 0, sizeof(*b));
+    strncpy(b->ssid, found->ssid, sizeof(b->ssid) - 1);
+    b->ssid[sizeof(b->ssid) - 1] = '\0';
+    b->signal_pct = found->signal_pct > 100 ? 100 : found->signal_pct;
+    b->channel = found->channel;
+    b->secured = found->secured;
 }
 
 int wifi_scan(void) {
@@ -66,31 +98,22 @@ int wifi_scan(void) {
         return 0;
     }
 
-    int count = kmod_net_count();
-    for (int i = 0; i < count; i++) {
+    int radios = kmod_net_count();
+    bool scan_supported = false;
+    for (int i = 0; i < radios && bss_count < WIFI_MAX_BSS; i++) {
         const net_iface_info_t* ni = kmod_get_net(i);
-        if (!ni || !ni->is_wifi) continue;
-        if (!ni->wifi_scan) {
-            serial_printf("[WIFI] %s has no radio scan implementation yet.\n", ni->driver);
-            continue;
-        }
+        if (!ni || !ni->is_wifi || !ni->wifi_scan) continue;
+        scan_supported = true;
         kmod_wifi_bss_t found[WIFI_MAX_BSS];
         memset(found, 0, sizeof(found));
-        int found_count = ni->wifi_scan(found, WIFI_MAX_BSS);
-        if (found_count < 0) found_count = 0;
-        if (found_count > WIFI_MAX_BSS) found_count = WIFI_MAX_BSS;
-        for (int j = 0; j < found_count; j++) {
-            wifi_bss_t* b = &bss_list[bss_count++];
-            memset(b, 0, sizeof(*b));
-            strncpy(b->ssid, found[j].ssid, sizeof(b->ssid) - 1);
-            b->signal_pct = found[j].signal_pct;
-            b->channel = found[j].channel;
-            b->secured = found[j].secured;
-            b->connected = g_connected && strcmp(g_conn_ssid, b->ssid) == 0;
-            if (bss_count >= WIFI_MAX_BSS) break;
-        }
-        break;
+        int n = ni->wifi_scan(found, WIFI_MAX_BSS);
+        if (n < 0) continue;
+        if (n > WIFI_MAX_BSS) n = WIFI_MAX_BSS;
+        for (int j = 0; j < n && bss_count < WIFI_MAX_BSS; j++) add_scan_result(&found[j]);
     }
+    if (!scan_supported)
+        serial_printf("[WIFI] %s detected, but its module has no scan callback.\n", g_hw_label);
+    update_connected_state();
     return bss_count;
 }
 
@@ -99,9 +122,17 @@ void wifi_init(void) {
     g_conn_ssid[0] = '\0';
     g_conn_signal = 0;
     load_wifi_conf();
+    /* Saved SSID is a profile hint only; no connection is claimed without association. */
+    char saved_ssid[sizeof(g_conn_ssid)];
+    strncpy(saved_ssid, g_conn_ssid, sizeof(saved_ssid) - 1);
+    saved_ssid[sizeof(saved_ssid) - 1] = '\0';
+    g_conn_ssid[0] = '\0';
     (void)wifi_scan();
-    if (g_conn_ssid[0]) g_connected = false;
-    serial_printf("[WIFI] Initialized (%s, %d real scan results)\n", g_hw_label, bss_count);
+    strncpy(g_conn_ssid, saved_ssid, sizeof(g_conn_ssid) - 1);
+    g_conn_ssid[sizeof(g_conn_ssid) - 1] = '\0';
+    g_connected = false;
+    g_conn_signal = 0;
+    serial_printf("[WIFI] Initialized (%s, %d scan result(s); disconnected)\n", g_hw_label, bss_count);
 }
 
 int wifi_bss_count(void) { return bss_count; }
@@ -109,40 +140,57 @@ const wifi_bss_t* wifi_get_bss(int idx) {
     return (idx >= 0 && idx < bss_count) ? &bss_list[idx] : NULL;
 }
 
-bool wifi_connect(int idx, const char* passphrase) {
-    if (idx < 0 || idx >= bss_count) return false;
-    wifi_bss_t* b = &bss_list[idx];
+static bool connect_radio(const char* ssid, const char* passphrase) {
     int count = kmod_net_count();
     for (int i = 0; i < count; i++) {
         const net_iface_info_t* ni = kmod_get_net(i);
         if (!ni || !ni->is_wifi || !ni->wifi_connect) continue;
-        if (!ni->wifi_connect(b->ssid, passphrase)) continue;
-        for (int j = 0; j < bss_count; j++) bss_list[j].connected = false;
-        b->connected = true;
-        g_connected = true;
-        strncpy(g_conn_ssid, b->ssid, sizeof(g_conn_ssid) - 1);
-        g_conn_signal = b->signal_pct;
-        save_wifi_conf();
-        serial_printf("[WIFI] Associated with SSID '%s' on %s\n", b->ssid, g_hw_label);
-        return true;
+        if (ni->wifi_connect(ssid, passphrase)) {
+            serial_printf("[WIFI] Radio %s accepted association with '%s'.\n", ni->iface, ssid);
+            return true;
+        }
     }
-    serial_puts("[WIFI] Association unavailable: no WLAN module control implementation.\n");
     return false;
 }
 
+static void mark_connected(const char* ssid) {
+    g_connected = true;
+    strncpy(g_conn_ssid, ssid, sizeof(g_conn_ssid) - 1);
+    g_conn_ssid[sizeof(g_conn_ssid) - 1] = '\0';
+    g_conn_signal = 0;
+    for (int i = 0; i < bss_count; i++) {
+        bss_list[i].connected = strcmp(bss_list[i].ssid, ssid) == 0;
+        if (bss_list[i].connected) g_conn_signal = bss_list[i].signal_pct;
+    }
+    save_wifi_conf();
+}
+
+bool wifi_connect(int idx, const char* passphrase) {
+    if (idx < 0 || idx >= bss_count) return false;
+    const wifi_bss_t* b = &bss_list[idx];
+    if (b->secured && (!passphrase || !*passphrase)) return false;
+    if (!connect_radio(b->ssid, passphrase)) {
+        serial_puts("[WIFI] Association failed or unsupported by this radio driver.\n");
+        return false;
+    }
+    mark_connected(b->ssid);
+    return true;
+}
+
 bool wifi_connect_ssid(const char* ssid, const char* passphrase) {
-    if (!ssid || !*ssid) return false;
-    wifi_scan();
+    if (!ssid || !*ssid || strlen(ssid) >= sizeof(g_conn_ssid)) return false;
+    /* Scan first so known security requirements are checked. Hidden SSIDs go directly
+       to the radio callback instead of recursively rescanning forever. */
+    (void)wifi_scan();
     for (int i = 0; i < bss_count; i++) {
         if (strcmp(bss_list[i].ssid, ssid) == 0) return wifi_connect(i, passphrase);
     }
-    int count = kmod_net_count();
-    for (int i = 0; i < count; i++) {
-        const net_iface_info_t* ni = kmod_get_net(i);
-        if (ni && ni->is_wifi && ni->wifi_connect)
-            return wifi_connect_ssid(ssid, passphrase);
+    if (!connect_radio(ssid, passphrase)) {
+        serial_puts("[WIFI] Hidden-network association failed or is unsupported.\n");
+        return false;
     }
-    return false;
+    mark_connected(ssid);
+    return true;
 }
 
 void wifi_disconnect(void) {
